@@ -4,10 +4,14 @@ import { fileURLToPath } from "node:url";
 
 // Resolve relative to this file so it works regardless of process.cwd()
 // (e.g. when launched as a stdio MCP server from another project's directory).
-const TEMPLATES_DIR = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../templates",
-);
+// In a packaged Electron build, OVERTREE_BUNDLE_ROOT pins the bundle layout
+// so we don't rely on import.meta.url surviving webpack's API-route bundling.
+const TEMPLATES_DIR = process.env.OVERTREE_BUNDLE_ROOT
+  ? path.join(process.env.OVERTREE_BUNDLE_ROOT, "templates")
+  : path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../templates",
+    );
 
 export async function listTemplates(): Promise<string[]> {
   try {

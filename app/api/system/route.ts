@@ -9,7 +9,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const settings = await loadSettings();
   const ips = getAllLanIps();
-  const stdioBin = path.resolve(process.cwd(), "mcp-server/stdio.ts");
+  const bundleRoot = process.env.OVERTREE_BUNDLE_ROOT ?? process.cwd();
+  const stdioBin = process.env.OVERTREE_BUNDLE_ROOT
+    ? path.join(bundleRoot, "dist", "mcp-stdio.cjs")
+    : path.resolve(bundleRoot, "mcp-server/stdio.ts");
   const tectonic = spawnSync("which", ["tectonic"]);
   const tectonicOk = tectonic.status === 0;
   const port = settings.port;

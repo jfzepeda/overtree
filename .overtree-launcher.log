@@ -3,8 +3,8 @@ $ NODE_ENV=production tsx server.ts
   Overtree is up.
 
   Local:    http://localhost:3737
-  Network:  http://192.168.0.137:3737
-  Network:  http://172.16.0.2:3737
+  Network:  http://192.168.101.144:3737
 
   Settings: /Users/juanfelipezepeda/Documents/Overtree/projects
 
+error: script "start" exited with code 143
