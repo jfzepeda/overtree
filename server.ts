@@ -3,6 +3,7 @@ import next from "next";
 import { WebSocketServer } from "ws";
 import { loadSettings } from "./lib/core/settings";
 import { getAllLanIps } from "./lib/lan";
+import { flushAllRooms } from "./lib/yjs/doc-manager";
 
 const dev = process.env.NODE_ENV !== "production";
 
@@ -82,6 +83,27 @@ async function main() {
     console.log("\n  Settings:", settings.rootDir);
     console.log("");
   });
+
+  // Flush every in-memory Y.Doc to disk before the process exits. Without this,
+  // edits made within the per-file flush debounce window (or never auto-saved
+  // because the user closed the tab) are lost on `tsx watch` restarts, deploys,
+  // and Ctrl+C in dev.
+  let shuttingDown = false;
+  const gracefulShutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n  Received ${signal}, flushing rooms…`);
+    try {
+      await flushAllRooms();
+    } catch (err) {
+      console.error("flushAllRooms failed during shutdown", err);
+    }
+    httpServer.close(() => process.exit(0));
+    // Safety net: if close hangs (open WS connections), force-exit after 2s.
+    setTimeout(() => process.exit(0), 2000).unref();
+  };
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 }
 
 main().catch((err) => {

@@ -70,8 +70,31 @@ export async function writeFile(
 ): Promise<void> {
   const abs = await resolveInProject(id, relPath);
   await fs.mkdir(path.dirname(abs), { recursive: true });
-  await fs.writeFile(abs, content);
+  await atomicWrite(abs, content);
   await touchProject(id);
+}
+
+/**
+ * Write `content` to `target` atomically: temp sibling + rename. Prevents
+ * partial/corrupt files if the process is killed mid-write.
+ */
+export async function atomicWrite(
+  target: string,
+  content: string | Buffer,
+): Promise<void> {
+  const dir = path.dirname(target);
+  const base = path.basename(target);
+  const tmp = path.join(
+    dir,
+    `.${base}.tmp.${process.pid}.${Math.random().toString(36).slice(2, 10)}`,
+  );
+  try {
+    await fs.writeFile(tmp, content);
+    await fs.rename(tmp, target);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => {});
+    throw err;
+  }
 }
 
 export async function editFile(

@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { yCollab } from "y-codemirror.next";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
@@ -46,6 +46,7 @@ type Props = {
 
 const TYPING_DEBOUNCE_MS = 1500;
 const DOC_CHANGE_DEBOUNCE_MS = 300;
+const SYNC_FALLBACK_MS = 3000;
 
 export function YjsCodeMirror({
   projectId,
@@ -62,6 +63,7 @@ export function YjsCodeMirror({
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const [synced, setSynced] = useState(false);
   const onSaveRef = useRef(onSave);
   const onCompileRef = useRef(onCompile);
   const onPeersRef = useRef(onPeers);
@@ -86,6 +88,7 @@ export function YjsCodeMirror({
       path.endsWith(".sty") ||
       path.endsWith(".cls");
 
+    setSynced(false);
     const ydoc = new Y.Doc();
     const ytext = ydoc.getText("content");
     const wsProto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -102,6 +105,30 @@ export function YjsCodeMirror({
     provider.on("status", (e: { status: string }) => {
       onConnRef.current?.(e.status === "connected");
     });
+
+    // Gate user input until we have the server's state (or a timeout fires).
+    // Without this, typing into the empty editor before sync arrives produces
+    // CRDT merge artifacts (user's chars interleave with server content at
+    // tie-broken positions). The 3s fallback covers the offline/no-server case.
+    const readOnlyCompartment = new Compartment();
+    let unlocked = false;
+    const unlock = () => {
+      if (unlocked) return;
+      unlocked = true;
+      if (viewRef.current) {
+        viewRef.current.dispatch({
+          effects: readOnlyCompartment.reconfigure(
+            EditorState.readOnly.of(false),
+          ),
+        });
+      }
+      setSynced(true);
+    };
+    const syncFallback = setTimeout(unlock, SYNC_FALLBACK_MS);
+    const onSync = (isSynced: boolean) => {
+      if (isSynced) unlock();
+    };
+    provider.on("sync", onSync);
 
     let typingTimer: ReturnType<typeof setTimeout> | null = null;
     let isTyping = false;
@@ -137,6 +164,7 @@ export function YjsCodeMirror({
     const view = new EditorView({
       state: EditorState.create({
         extensions: [
+          readOnlyCompartment.of(EditorState.readOnly.of(true)),
           basicSetup,
           oneDark,
           ...(isTex ? [StreamLanguage.define(stex)] : []),
@@ -248,6 +276,8 @@ export function YjsCodeMirror({
       if (typingTimer) clearTimeout(typingTimer);
       if (docChangeTimer) clearTimeout(docChangeTimer);
       clearTimeout(initialFire);
+      clearTimeout(syncFallback);
+      provider.off("sync", onSync);
       view.destroy();
       provider.awareness.off("change", updatePeers);
       provider.destroy();
@@ -256,7 +286,18 @@ export function YjsCodeMirror({
     };
   }, [projectId, path, userName, userColor]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" />
+      {!synced && (
+        <div className="pointer-events-none absolute inset-0 flex items-start justify-center pt-4">
+          <div className="px-3 py-1.5 rounded-md bg-zinc-900/90 border border-zinc-800 text-xs text-zinc-400">
+            Syncing…
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function escapeRegex(s: string): string {

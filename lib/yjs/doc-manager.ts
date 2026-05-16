@@ -3,20 +3,26 @@ import { Awareness } from "y-protocols/awareness";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
-import { readFile, writeFile } from "@/lib/core/files";
+import { atomicWrite, readFile, writeFile } from "@/lib/core/files";
 import { projectMetaDir, resolveInProject } from "@/lib/core/storage";
 import { createHash } from "node:crypto";
 import type { WebSocket } from "ws";
 
-const FLUSH_DEBOUNCE_MS = 800;
-const STATE_FLUSH_DEBOUNCE_MS = 300;
+/**
+ * Persistence ordering: `.tex` flushes BEFORE `.bin`, so on disk the user-facing
+ * text is always at least as fresh as the CRDT history snapshot. This makes the
+ * reconciliation in `getRoom` (prefer `diskContent` when it differs from the
+ * hydrated Y.Text) correct under BOTH cases that cause a mismatch:
+ *   - external write to `.tex` (vim / MCP / git) → `.tex` is genuinely newer
+ *   - server crash between flushes → `.tex` was flushed but `.bin` wasn't,
+ *     so `.tex` is still newer than the `.bin` snapshot.
+ * If we flushed `.bin` first instead, a mid-window crash would leave `.bin`
+ * ahead of `.tex` and the reconciliation would discard the user's edits.
+ */
+const FLUSH_DEBOUNCE_MS = 300;
+const STATE_FLUSH_DEBOUNCE_MS = 800;
 const IDLE_DISPOSE_MS = 5 * 60 * 1000;
 
-/**
- * Persisted binary Y.Doc state file path. Storing this alongside the project
- * lets `getRoom()` rehydrate the FULL CRDT history across server restarts so
- * reconnecting clients merge cleanly instead of producing duplicate content.
- */
 async function yjsStateFile(
   projectId: string,
   filePath: string,
@@ -47,6 +53,7 @@ export type Room = {
 };
 
 const rooms = new Map<string, Room>();
+const pendingRooms = new Map<string, Promise<Room>>();
 
 function roomKey(projectId: string, filePath: string): string {
   return `${projectId}::${filePath}`;
@@ -69,13 +76,32 @@ export async function getRoom(
     }
     return existing;
   }
+  // Coalesce concurrent inits for the same room. Without this, two WS
+  // connections arriving in the same microtask window each build their own
+  // Y.Doc and the second `rooms.set` orphans the first, leaving one client
+  // wired to an isolated doc.
+  const inFlight = pendingRooms.get(key);
+  if (inFlight) return inFlight;
 
+  const promise = (async () => {
+    try {
+      return await initRoom(projectId, filePath, key);
+    } finally {
+      pendingRooms.delete(key);
+    }
+  })();
+  pendingRooms.set(key, promise);
+  return promise;
+}
+
+async function initRoom(
+  projectId: string,
+  filePath: string,
+  key: string,
+): Promise<Room> {
   const doc = new Y.Doc();
   const ytext = doc.getText("content");
 
-  // Prefer the persisted Y.Doc binary state — it preserves CRDT history so
-  // reconnecting clients merge idempotently across server restarts.
-  // Fall back to seeding from the on-disk text only when no state exists yet.
   const stateFile = await yjsStateFile(projectId, filePath);
   let seededFromState = false;
   try {
@@ -91,7 +117,9 @@ export async function getRoom(
       doc.transact(() => ytext.insert(0, diskContent), "disk-sync");
     }
   } else if (ytext.toString() !== diskContent && diskContent) {
-    // External tool edited the file while server was off — reflect into Y.Text.
+    // Disk differs from the rehydrated CRDT. With .tex-first flushing this
+    // means the disk is the authoritative version (either edited externally
+    // or surviving a crash that lost the in-progress .bin flush).
     doc.transact(() => {
       ytext.delete(0, ytext.length);
       ytext.insert(0, diskContent);
@@ -116,12 +144,16 @@ export async function getRoom(
   };
 
   doc.on("update", (_update, origin) => {
+    // .bin captures the CRDT state and must follow every doc mutation —
+    // including disk-sync ones (chokidar pulled new content in, the CRDT
+    // gained an op for it). .tex is the user-facing text; skip its scheduler
+    // when the update originated from disk because the file already has that
+    // content.
     scheduleStateFlush(room);
     if (origin === "disk-sync") return;
     scheduleFlush(room);
   });
 
-  // Watch the on-disk file for external edits (e.g. MCP writes, other tools)
   const abs = await resolveInProject(projectId, filePath);
   await fs.mkdir(path.dirname(abs), { recursive: true });
   const watcher = chokidar.watch(abs, {
@@ -155,7 +187,7 @@ async function flushYjsState(room: Room) {
     const file = await yjsStateFile(room.projectId, room.filePath);
     await fs.mkdir(path.dirname(file), { recursive: true });
     const update = Y.encodeStateAsUpdate(room.doc);
-    await fs.writeFile(file, update);
+    await atomicWrite(file, Buffer.from(update));
   } catch (err) {
     console.error("yjs state flush failed", room.key, err);
   }
@@ -188,7 +220,6 @@ async function onDiskChange(room: Room) {
   if (hash === room.lastDiskHash) return; // self-write
   if (hash === room.pendingFlushHash) return; // mid-flush echo
   room.lastDiskHash = hash;
-  // Replace whole Y.Text with disk content. origin "disk-sync" prevents loop.
   room.doc.transact(() => {
     room.ytext.delete(0, room.ytext.length);
     room.ytext.insert(0, content);
@@ -227,18 +258,43 @@ async function disposeRoom(room: Room) {
   rooms.delete(room.key);
 }
 
-/** Flush all in-memory Y.Docs belonging to a project to disk, awaiting writes. */
+/**
+ * Flush all in-memory Y.Docs belonging to a project: both .tex and .bin so
+ * disk is fully consistent before the call returns. Used by /api/save.
+ */
 export async function flushProjectDocs(projectId: string): Promise<void> {
   const tasks: Promise<void>[] = [];
   for (const room of rooms.values()) {
     if (room.projectId !== projectId) continue;
-    if (room.flushTimer) {
-      clearTimeout(room.flushTimer);
-      room.flushTimer = null;
-    }
-    tasks.push(flushToDisk(room));
+    tasks.push(flushRoomNow(room));
   }
   await Promise.all(tasks);
+}
+
+/**
+ * Flush every live room — .tex then .bin — and await completion. Called from
+ * the server's SIGINT/SIGTERM handler so a deploy/restart never strands edits
+ * that only existed in memory.
+ */
+export async function flushAllRooms(): Promise<void> {
+  const tasks: Promise<void>[] = [];
+  for (const room of rooms.values()) {
+    tasks.push(flushRoomNow(room));
+  }
+  await Promise.all(tasks);
+}
+
+async function flushRoomNow(room: Room): Promise<void> {
+  if (room.flushTimer) {
+    clearTimeout(room.flushTimer);
+    room.flushTimer = null;
+  }
+  if (room.stateFlushTimer) {
+    clearTimeout(room.stateFlushTimer);
+    room.stateFlushTimer = null;
+  }
+  await flushToDisk(room);
+  await flushYjsState(room);
 }
 
 /** Apply external (e.g. MCP HTTP) write so connected editors see the change. */
