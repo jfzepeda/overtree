@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -10,12 +10,16 @@ import {
 } from "react-resizable-panels";
 import type { CodeMirrorHandle, Peer } from "./yjs-code-mirror";
 import { FileTree, type FileNode } from "@/components/file-tree/file-tree";
-import { CheckIcon, LoaderIcon, PlayIcon, SaveIcon } from "@/components/icons";
+import { CheckIcon, LoaderIcon, PlayIcon, PlusIcon, SaveIcon } from "@/components/icons";
 import {
   CompileLog,
   type LogEntry,
 } from "@/components/compile-log/compile-log";
 import { PresenceBar } from "@/components/presence/presence-bar";
+import { OutlinePanel } from "./outline-panel";
+import { BibliographyPanel } from "./bibliography-panel";
+import { PackagePicker } from "./package-picker";
+import { parseBib, formatBibEntry, type BibEntry } from "@/lib/core/bib";
 
 const YjsCodeMirror = dynamic(
   () => import("./yjs-code-mirror").then((m) => m.YjsCodeMirror),
@@ -36,6 +40,36 @@ type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 type UserInfo = { name: string; color: string };
 
+type SidebarTab = "files" | "outline" | "refs";
+
+type BibFile = { path: string; entries: BibEntry[] };
+
+function collectBibPaths(tree: FileNode[]): string[] {
+  const out: string[] = [];
+  const walk = (nodes: FileNode[]) => {
+    for (const n of nodes) {
+      if (n.kind === "file" && n.path.endsWith(".bib")) out.push(n.path);
+      if (n.kind === "dir" && n.children) walk(n.children);
+    }
+  };
+  walk(tree);
+  return out;
+}
+
+function collectInstalledPackages(doc: string): Set<string> {
+  const out = new Set<string>();
+  const re = /\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\s*\{([^}]+)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(doc))) {
+    m[1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .forEach((p) => out.add(p));
+  }
+  return out;
+}
+
 export function EditorShell({
   project,
   user: initialUser,
@@ -53,11 +87,16 @@ export function EditorShell({
   const [connected, setConnected] = useState(false);
   const [user, setUser] = useState<UserInfo>(initialUser);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("files");
+  const [docText, setDocText] = useState<string>("");
+  const [bibFiles, setBibFiles] = useState<BibFile[]>([]);
+  const [packagePickerOpen, setPackagePickerOpen] = useState(false);
 
   const editorRef = useRef<CodeMirrorHandle | null>(null);
   const compileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sseRef = useRef<EventSource | null>(null);
+  const bibEntriesRef = useRef<BibEntry[]>([]);
 
   const reloadTree = useCallback(async () => {
     const r = await fetch(`/api/files/${project.id}`);
@@ -71,6 +110,36 @@ export function EditorShell({
       if (sseRef.current) sseRef.current.close();
     };
   }, [project.id, reloadTree]);
+
+  // Load .bib files whenever the tree changes.
+  const reloadBibs = useCallback(
+    async (currentTree: FileNode[]) => {
+      const paths = collectBibPaths(currentTree);
+      if (paths.length === 0) {
+        setBibFiles([]);
+        bibEntriesRef.current = [];
+        return;
+      }
+      const results: BibFile[] = [];
+      for (const p of paths) {
+        try {
+          const r = await fetch(`/api/files/${project.id}/${encodeURI(p)}?raw=1`);
+          if (!r.ok) continue;
+          const text = await r.text();
+          results.push({ path: p, entries: parseBib(text) });
+        } catch {
+          // ignore
+        }
+      }
+      setBibFiles(results);
+      bibEntriesRef.current = results.flatMap((b) => b.entries);
+    },
+    [project.id],
+  );
+
+  useEffect(() => {
+    reloadBibs(tree);
+  }, [tree, reloadBibs]);
 
   const subscribeCompile = useCallback(() => {
     if (sseRef.current) sseRef.current.close();
@@ -128,7 +197,6 @@ export function EditorShell({
   }, [project.id]);
 
   function handleSaveNow() {
-    // Cmd-S: flush yjs to disk and queue a compile.
     saveNow();
     if (compileTimer.current) clearTimeout(compileTimer.current);
     compileTimer.current = setTimeout(() => compile(), 200);
@@ -183,6 +251,31 @@ export function EditorShell({
     setUser({ ...user, name: trimmed });
   }
 
+  const insertCite = useCallback((key: string) => {
+    editorRef.current?.insertAtCursor(`\\cite{${key}}`);
+  }, []);
+
+  const addBibEntry = useCallback(
+    async (path: string, entry: BibEntry) => {
+      // Fetch current contents, append entry, PUT back.
+      const r = await fetch(`/api/files/${project.id}/${encodeURI(path)}?raw=1`);
+      const current = r.ok ? await r.text() : "";
+      const next = current.replace(/\s*$/, "") + "\n\n" + formatBibEntry(entry) + "\n";
+      await fetch(`/api/files/${project.id}/${encodeURI(path)}`, {
+        method: "PUT",
+        headers: { "content-type": "text/plain" },
+        body: next,
+      });
+      await reloadBibs(tree);
+    },
+    [project.id, reloadBibs, tree],
+  );
+
+  const installedPackages = useMemo(
+    () => collectInstalledPackages(docText),
+    [docText],
+  );
+
   const pdfSrc = pdfAvailable
     ? `/api/files/${project.id}/output/${project.mainFile.replace(/\.tex$/, ".pdf")}?v=${pdfBust}`
     : null;
@@ -202,6 +295,14 @@ export function EditorShell({
           <span className="text-xs text-zinc-500 truncate">{activePath}</span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setPackagePickerOpen(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800 text-zinc-300 text-xs transition"
+            title="Add LaTeX package"
+          >
+            <PlusIcon width={12} height={12} />
+            Package
+          </button>
           <button
             onClick={changeName}
             className="text-xs text-zinc-500 hover:text-zinc-200"
@@ -250,13 +351,50 @@ export function EditorShell({
       <div className="flex-1 min-h-0">
         <PanelGroup orientation="horizontal" className="h-full">
           <Panel defaultSize={18} minSize={12}>
-            <FileTree
-              tree={tree}
-              activePath={activePath}
-              onOpen={setActivePath}
-              onCreate={createFile}
-              onDelete={deletePath}
-            />
+            <div className="h-full flex flex-col bg-[var(--panel)]">
+              <div className="flex border-b border-zinc-800 text-xs">
+                <SidebarTabButton
+                  active={sidebarTab === "files"}
+                  onClick={() => setSidebarTab("files")}
+                >
+                  Files
+                </SidebarTabButton>
+                <SidebarTabButton
+                  active={sidebarTab === "outline"}
+                  onClick={() => setSidebarTab("outline")}
+                >
+                  Outline
+                </SidebarTabButton>
+                <SidebarTabButton
+                  active={sidebarTab === "refs"}
+                  onClick={() => setSidebarTab("refs")}
+                  badge={bibFiles.reduce((n, b) => n + b.entries.length, 0) || undefined}
+                >
+                  Refs
+                </SidebarTabButton>
+              </div>
+              <div className="flex-1 min-h-0">
+                {sidebarTab === "files" && (
+                  <FileTree
+                    tree={tree}
+                    activePath={activePath}
+                    onOpen={setActivePath}
+                    onCreate={createFile}
+                    onDelete={deletePath}
+                  />
+                )}
+                {sidebarTab === "outline" && (
+                  <OutlinePanel text={docText} onJump={jumpToLine} />
+                )}
+                {sidebarTab === "refs" && (
+                  <BibliographyPanel
+                    bibFiles={bibFiles}
+                    onInsertCite={insertCite}
+                    onAddEntry={addBibEntry}
+                  />
+                )}
+              </div>
+            </div>
           </Panel>
           <PanelResizeHandle className="w-px bg-zinc-800 hover:bg-zinc-700 transition" />
           <Panel defaultSize={45} minSize={20}>
@@ -275,6 +413,15 @@ export function EditorShell({
                     onReady={(h) => {
                       editorRef.current = h;
                     }}
+                    onDocChange={setDocText}
+                    getBibEntries={() =>
+                      bibEntriesRef.current.map((e) => ({
+                        key: e.key,
+                        title: e.fields.title,
+                        author: e.fields.author,
+                        year: e.fields.year,
+                      }))
+                    }
                   />
                 </div>
               </Panel>
@@ -294,6 +441,43 @@ export function EditorShell({
           </Panel>
         </PanelGroup>
       </div>
+
+      <PackagePicker
+        open={packagePickerOpen}
+        onClose={() => setPackagePickerOpen(false)}
+        alreadyInstalled={installedPackages}
+        onInsert={(name) => editorRef.current?.insertUsePackage(name)}
+      />
     </div>
+  );
+}
+
+function SidebarTabButton({
+  active,
+  onClick,
+  children,
+  badge,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  badge?: number;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 px-2 py-2 uppercase tracking-wide transition ${
+        active
+          ? "text-zinc-100 border-b border-blue-500 bg-zinc-900/40"
+          : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/40"
+      }`}
+    >
+      <span className="inline-flex items-center gap-1.5">
+        {children}
+        {typeof badge === "number" && badge > 0 && (
+          <span className="text-[9px] px-1 rounded bg-zinc-800 text-zinc-300">{badge}</span>
+        )}
+      </span>
+    </button>
   );
 }

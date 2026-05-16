@@ -22,7 +22,7 @@ export function PresenceBar({ me, peers, connected }: Props) {
       />
       <Avatar name={me.name} color={me.color} self />
       {peers.map((p) => (
-        <Avatar key={p.clientId} name={p.name} color={p.color} />
+        <Avatar key={p.clientId} name={p.name} color={p.color} typing={p.typing} />
       ))}
     </div>
   );
@@ -32,18 +32,31 @@ function Avatar({
   name,
   color,
   self,
+  typing,
 }: {
   name: string;
   color: string;
   self?: boolean;
+  typing?: boolean;
 }) {
+  const titleParts = [name];
+  if (self) titleParts.push("(you)");
+  if (typing) titleParts.push("· typing…");
   return (
-    <div
-      title={`${name}${self ? " (you)" : ""}`}
-      style={{ background: color }}
-      className="w-6 h-6 rounded-full text-[10px] font-semibold flex items-center justify-center text-white border border-zinc-900 ring-2 ring-zinc-900/0 hover:ring-zinc-700 transition"
-    >
-      {initials(name)}
+    <div className="relative">
+      <div
+        title={titleParts.join(" ")}
+        style={{ background: color }}
+        className="w-6 h-6 rounded-full text-[10px] font-semibold flex items-center justify-center text-white border border-zinc-900 ring-2 ring-zinc-900/0 hover:ring-zinc-700 transition"
+      >
+        {initials(name)}
+      </div>
+      {typing && (
+        <span
+          className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-zinc-900 animate-pulse"
+          title="typing…"
+        />
+      )}
     </div>
   );
 }
