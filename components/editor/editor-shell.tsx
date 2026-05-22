@@ -280,9 +280,22 @@ export function EditorShell({
     ? `/api/files/${project.id}/output/${project.mainFile.replace(/\.tex$/, ".pdf")}?v=${pdfBust}`
     : null;
 
+  // In the packaged macOS app the window uses titleBarStyle "hiddenInset",
+  // so the traffic-light buttons overlay the top-left of the header. Pad the
+  // header left to clear them (no-op in the browser, where there are none).
+  const [isMacElectron, setIsMacElectron] = useState(false);
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    setIsMacElectron(ua.includes("Electron") && ua.includes("Mac"));
+  }, []);
+
   return (
     <div className="h-screen flex flex-col">
-      <header className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-[var(--panel)]">
+      <header
+        className={`flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-[var(--panel)] ${
+          isMacElectron ? "pl-[78px]" : ""
+        }`}
+      >
         <div className="flex items-center gap-3 min-w-0">
           <Link
             href="/projects"
