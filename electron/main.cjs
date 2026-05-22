@@ -13,6 +13,30 @@ const appRoot = isPackaged
 
 const serverEntry = path.join(appRoot, "dist", "server.cjs");
 
+// macOS apps launched from Finder/Dock inherit a stripped PATH
+// (/usr/bin:/bin:/usr/sbin:/sbin) that omits Homebrew, cargo, etc. The
+// LaTeX compiler shells out to `tectonic`, which lives in one of those
+// dirs, so we restore them before spawning the server.
+function enhancedPath() {
+  const home = process.env.HOME || "";
+  const candidates = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    home && path.join(home, ".cargo/bin"),
+    "/opt/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+  ].filter(Boolean);
+  const current = (process.env.PATH || "").split(path.delimiter);
+  const merged = [];
+  for (const dir of [...candidates, ...current]) {
+    if (dir && !merged.includes(dir) && fs.existsSync(dir)) merged.push(dir);
+  }
+  return merged.join(path.delimiter);
+}
+
 let mainWindow = null;
 let serverChild = null;
 let serverLogFd = null;
@@ -81,6 +105,7 @@ async function startServer() {
     cwd: appRoot,
     env: {
       ...process.env,
+      PATH: enhancedPath(),
       ELECTRON_RUN_AS_NODE: "1",
       NODE_ENV: "production",
       PORT: String(port),

@@ -12,7 +12,7 @@
     "mcp-config": "tsx scripts/print-mcp-config.ts",
     "electron:dev": "concurrently -k -n NEXT,ELECTRON \"bun run dev\" \"wait-on tcp:3737 && OVERTREE_DEV_URL=http://localhost:3737 electron electron/main.cjs\"",
     "electron:build:server": "node scripts/build-server.mjs",
-    "app:dist": "next build && bun run electron:build:server && electron-builder --mac"
+    "app:dist": "rm -rf release && next build && bun run electron:build:server && electron-builder --mac && node scripts/organize-release.mjs"
   },
   "bin": {
     "overtree-mcp": "mcp-server/stdio.ts"
@@ -29,7 +29,7 @@
     "@codemirror/view": "^6.41.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "bcryptjs": "^3.0.3",
-    "chokidar": "^5.0.0",
+    "chokidar": "^3.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "codemirror": "^6.0.2",
@@ -105,6 +105,7 @@
   "arch": ["arm64", "x64"]
 }
 ],
+"artifactName": "${productName}-${version}-mac-${arch}.${ext}",
 "category": "public.app-category.productivity",
 "icon": "build/icon.icns",
 "identity": null,
