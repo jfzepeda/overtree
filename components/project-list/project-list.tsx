@@ -64,7 +64,7 @@ export function ProjectList() {
           </Link>
           <button
             onClick={() => setOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent)] hover:bg-blue-500 text-white text-sm font-medium transition"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm font-medium transition"
           >
             <PlusIcon /> New project
           </button>

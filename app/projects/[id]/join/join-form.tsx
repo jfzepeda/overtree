@@ -117,7 +117,7 @@ export function JoinForm({ projectId, projectName, isPrivate }: Props) {
           <button
             type="submit"
             disabled={!name.trim() || submitting}
-            className="px-4 py-2 rounded-md bg-[var(--accent)] hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition"
+            className="px-4 py-2 rounded-md bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-white text-sm font-medium transition"
           >
             {submitting ? "Joining…" : "Join project"}
           </button>

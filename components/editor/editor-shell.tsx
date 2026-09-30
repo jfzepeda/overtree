@@ -55,6 +55,9 @@ export function EditorShell({
   const [user, setUser] = useState<UserInfo>(initialUser);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [editingName, setEditingName] = useState(false);
+  // Enter commits directly (blur() doesn't fire blur when the window is
+  // unfocused); the unmount may still fire blur, so settle only once.
+  const nameSettled = useRef(false);
 
   const editorRef = useRef<CodeMirrorHandle | null>(null);
   const compileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -193,6 +196,8 @@ export function EditorShell({
   }
 
   async function changeName(next: string) {
+    if (nameSettled.current) return;
+    nameSettled.current = true;
     setEditingName(false);
     const trimmed = next.trim();
     if (!trimmed || trimmed === user.name) return;
@@ -210,7 +215,7 @@ export function EditorShell({
 
   return (
     <div className="h-[calc(100vh-var(--titlebar-h))] flex flex-col">
-      <header className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-[var(--panel)]">
+      <header className="chrome chrome-top flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-[var(--panel)]">
         <div className="flex items-center gap-3 min-w-0">
           <Link
             href="/projects"
@@ -230,9 +235,9 @@ export function EditorShell({
               defaultValue={user.name}
               onFocus={(e) => e.currentTarget.select()}
               onKeyDown={(e) => {
-                if (e.key === "Enter") e.currentTarget.blur();
+                if (e.key === "Enter") changeName(e.currentTarget.value);
                 else if (e.key === "Escape") {
-                  e.currentTarget.value = user.name; // blur on unmount must not save
+                  nameSettled.current = true;
                   setEditingName(false);
                 }
               }}
@@ -241,7 +246,10 @@ export function EditorShell({
             />
           ) : (
             <button
-              onClick={() => setEditingName(true)}
+              onClick={() => {
+                nameSettled.current = false;
+                setEditingName(true);
+              }}
               className="text-xs text-zinc-500 hover:text-zinc-200"
               title="Change name"
             >
@@ -273,7 +281,7 @@ export function EditorShell({
           <button
             onClick={compile}
             disabled={compileStatus === "running"}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-white text-sm font-medium transition"
             title="Compile (Cmd+Enter)"
           >
             {compileStatus === "running" ? (
@@ -298,7 +306,7 @@ export function EditorShell({
               onDelete={deletePath}
             />
           </Panel>
-          <PanelResizeHandle className="w-px bg-zinc-800 hover:bg-zinc-700 transition" />
+          <PanelResizeHandle className="chrome w-px bg-zinc-800 hover:bg-zinc-700 transition" />
           <Panel defaultSize={45} minSize={20}>
             <PanelGroup orientation="vertical" className="h-full">
               <Panel defaultSize={70} minSize={20}>
@@ -318,7 +326,7 @@ export function EditorShell({
                   />
                 </div>
               </Panel>
-              <PanelResizeHandle className="h-px bg-zinc-800 hover:bg-zinc-700 transition" />
+              <PanelResizeHandle className="chrome h-px bg-zinc-800 hover:bg-zinc-700 transition" />
               <Panel defaultSize={30} minSize={10}>
                 <CompileLog
                   entries={logEntries}
@@ -328,7 +336,7 @@ export function EditorShell({
               </Panel>
             </PanelGroup>
           </Panel>
-          <PanelResizeHandle className="w-px bg-zinc-800 hover:bg-zinc-700 transition" />
+          <PanelResizeHandle className="chrome w-px bg-zinc-800 hover:bg-zinc-700 transition" />
           <Panel defaultSize={37} minSize={20}>
             <PdfViewer src={pdfSrc} />
           </Panel>

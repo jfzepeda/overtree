@@ -19,7 +19,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: bootScript }} />
       </head>
       <body className="min-h-full bg-zinc-950 text-zinc-100 font-sans">
-        <div className="titlebar">Overtree</div>
+        <div className="titlebar chrome chrome-top">Overtree</div>
         {children}
       </body>
     </html>

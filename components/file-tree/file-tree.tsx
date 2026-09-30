@@ -138,8 +138,8 @@ export function FileTree(props: Props) {
   };
 
   return (
-    <div className="h-full flex flex-col bg-[var(--panel)] text-sm">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800">
+    <div className="chrome chrome-side h-full flex flex-col bg-[var(--panel)] text-sm">
+      <div className="chrome-subbar flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800">
         <span className="text-xs uppercase tracking-wide text-zinc-500 flex-1">
           Files
         </span>
@@ -286,7 +286,7 @@ function Node({ node, depth, ctx }: { node: FileNode; depth: number; ctx: Ctx })
         onDoubleClick={() => ctx.startRename(node)}
         className={cn(
           "group flex items-center gap-1 pr-2 py-1 cursor-pointer select-none",
-          isActive ? "bg-zinc-800 text-zinc-50" : "hover:bg-zinc-900",
+          isActive ? "bg-[var(--tree-active)] text-zinc-50" : "hover:bg-zinc-900",
           isDir && ctx.dropTarget === node.path && "bg-[var(--accent)]/20",
         )}
       >
