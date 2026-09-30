@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, nativeTheme, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -12,6 +12,41 @@ const appRoot = isPackaged
   : path.join(__dirname, "..");
 
 const serverEntry = path.join(appRoot, "dist", "server.cjs");
+
+// macOS apps launched from Finder/Dock inherit a stripped PATH
+// (/usr/bin:/bin:/usr/sbin:/sbin) that omits Homebrew, cargo, etc. The
+// LaTeX compiler shells out to `tectonic`, which lives in one of those
+// dirs, so we restore them before spawning the server. On Windows we add
+// the usual install locations of tectonic (cargo, scoop, chocolatey).
+function enhancedPath() {
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const isWin = process.platform === "win32";
+  const candidates = isWin
+    ? [
+        home && path.join(home, ".cargo", "bin"),
+        home && path.join(home, "scoop", "shims"),
+        process.env.LOCALAPPDATA &&
+          path.join(process.env.LOCALAPPDATA, "Programs", "tectonic"),
+        process.env.ChocolateyInstall &&
+          path.join(process.env.ChocolateyInstall, "bin"),
+      ].filter(Boolean)
+    : [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    home && path.join(home, ".cargo/bin"),
+    "/opt/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+  ].filter(Boolean);
+  const current = (process.env.PATH || "").split(path.delimiter);
+  const merged = [];
+  for (const dir of [...candidates, ...current]) {
+    if (dir && !merged.includes(dir) && fs.existsSync(dir)) merged.push(dir);
+  }
+  return merged.join(path.delimiter);
+}
 
 let mainWindow = null;
 let serverChild = null;
@@ -81,6 +116,7 @@ async function startServer() {
     cwd: appRoot,
     env: {
       ...process.env,
+      PATH: enhancedPath(),
       ELECTRON_RUN_AS_NODE: "1",
       NODE_ENV: "production",
       PORT: String(port),
@@ -116,8 +152,19 @@ function createWindow(port) {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    backgroundColor: "#0b0b0b",
-    titleBarStyle: "hiddenInset",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff",
+    // The page draws its own draggable title strip (.titlebar in globals.css);
+    // keep the traffic lights vertically centred inside it.
+    titleBarStyle: "hidden",
+    trafficLightPosition: { x: 14, y: 10 },
+    // Windows/Linux: keep the native min/max/close buttons over our title strip.
+    ...(process.platform !== "darwin" && {
+      titleBarOverlay: {
+        color: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff",
+        symbolColor: nativeTheme.shouldUseDarkColors ? "#d4d4d8" : "#3f3f46",
+        height: 32,
+      },
+    }),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

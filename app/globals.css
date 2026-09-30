@@ -1,11 +1,125 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
-  --panel: #141414;
-  --border: #262626;
-  --accent: #4f8cf7;
+  /* Dark theme: Overleaf-inspired slate palette. Components use Tailwind's
+     zinc scale, so re-tinting the scale here restyles the whole UI. */
+  --background: #161b22;
+  --foreground: #e2e6ea;
+  --panel: #1e2530;
+  --border: #2c3645;
+  --accent: #138a07;
+  --accent-hover: #1a9e0b;
+  --tree-active: #138a07;
+  --pdf-bg: #2c3645;
+  --chrome-top: #12161c;
+  --chrome-side: #252e3b;
+  --chrome-subbar: #1b212a;
+  --scrollbar: #3b4658;
+  --scrollbar-hover: #5a6679;
+  --titlebar-h: 0px;
+  --color-zinc-50: #f4f5f7;
+  --color-zinc-100: #e2e6ea;
+  --color-zinc-200: #c9cfd8;
+  --color-zinc-300: #b3bcc8;
+  --color-zinc-400: #97a1b0;
+  --color-zinc-500: #7d8899;
+  --color-zinc-600: #5a6679;
+  --color-zinc-700: #3b4658;
+  --color-zinc-800: #2c3645;
+  --color-zinc-900: #1e2530;
+  --color-zinc-950: #161b22;
+  color-scheme: dark;
+}
+
+/* Light theme: the UI is written against Tailwind's zinc scale for a dark
+   background, so mirroring the scale (50<->950, 100<->900, ...) flips every
+   surface, border and text colour at once without touching components. */
+:root[data-theme="light"] {
+  --background: #ffffff;
+  --foreground: #18181b;
+  --panel: #f7f7f8;
+  --border: #e4e4e7;
+  --accent: #138a07;
+  --accent-hover: #0f7005;
+  --tree-active: #138a07;
+  --pdf-bg: #e4e8ee;
+  --chrome-top: #1e2530;
+  --chrome-side: #455265;
+  --chrome-subbar: #2c3645;
+  --scrollbar: #d4d4d8;
+  --scrollbar-hover: #a1a1aa;
+  --color-zinc-50: oklch(14.1% 0.005 285.823);
+  --color-zinc-100: oklch(21% 0.006 285.885);
+  --color-zinc-200: oklch(27.4% 0.006 286.033);
+  --color-zinc-300: oklch(37% 0.013 285.805);
+  --color-zinc-400: oklch(44.2% 0.017 285.786);
+  --color-zinc-500: oklch(55.2% 0.016 285.938);
+  --color-zinc-600: oklch(70.5% 0.015 286.067);
+  --color-zinc-700: oklch(87.1% 0.006 286.286);
+  --color-zinc-800: oklch(92% 0.004 286.32);
+  --color-zinc-900: oklch(96.7% 0.001 286.375);
+  --color-zinc-950: oklch(98.5% 0 0);
+  color-scheme: light;
+}
+
+/* Light theme keeps the app chrome (title bar, editor header, file tree)
+   dark slate with light content, Overleaf-style: restore a dark, slate-tinted
+   zinc scale inside .chrome so its components render as in dark mode. */
+:root[data-theme="light"] .chrome {
+  --color-zinc-50: #ffffff;
+  --color-zinc-100: #f4f5f7;
+  --color-zinc-200: #e2e6ea;
+  --color-zinc-300: #c9cfd8;
+  --color-zinc-400: #b3bcc8;
+  --color-zinc-500: #a1abb9;
+  --color-zinc-600: #7d8899;
+  --color-zinc-700: #5a6679;
+  --color-zinc-800: #3b4658;
+  --color-zinc-900: #2c3645;
+  --color-zinc-950: #1e2530;
+  --scrollbar: #5a6679;
+  --scrollbar-hover: #7d8899;
+  color: var(--color-zinc-100);
+  color-scheme: dark;
+}
+.chrome-top {
+  --panel: var(--chrome-top);
+}
+.chrome-side {
+  --panel: var(--chrome-side);
+}
+.chrome-subbar {
+  background: var(--chrome-subbar);
+}
+
+/* Electron window: the native title bar is hidden, so reserve a draggable
+   strip at the top (the traffic lights sit inside it). */
+:root.electron {
+  --titlebar-h: 32px;
+}
+.titlebar {
+  display: none;
+}
+:root.electron .titlebar {
+  display: flex;
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--titlebar-h);
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--color-zinc-500);
+  background: var(--panel);
+  border-bottom: 1px solid var(--color-zinc-800);
+  -webkit-app-region: drag;
+  user-select: none;
+  z-index: 50;
+}
+:root.electron .titlebar button {
+  -webkit-app-region: no-drag;
+}
+:root.electron body {
+  padding-top: var(--titlebar-h);
 }
 
 @theme inline {
@@ -48,9 +162,141 @@ button {
   height: 8px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #3a3a3a;
+  background: var(--scrollbar);
   border-radius: 4px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #4a4a4a;
+  background: var(--scrollbar-hover);
+}
+
+/* Cmd-F search panel. Prefixed with `:root .cm-editor` to outrank
+   CodeMirror's injected theme styles. Colours come from the theme tokens, so
+   it follows light/dark automatically. */
+:root .cm-editor .cm-panels {
+  background: var(--panel);
+  color: var(--color-zinc-200);
+}
+:root .cm-editor .cm-panels-top {
+  border-bottom: 1px solid var(--color-zinc-800);
+}
+:root .cm-editor .cm-panel.cm-search {
+  position: relative;
+  padding: 8px 40px 8px 10px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1;
+}
+:root .cm-editor .cm-panel.cm-search > * {
+  margin: 3px 6px 3px 0;
+  vertical-align: middle;
+}
+:root .cm-editor .cm-search .cm-textfield {
+  width: 220px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-zinc-700);
+  border-radius: 6px;
+  background: var(--color-zinc-950);
+  color: var(--color-zinc-100);
+  font: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+:root .cm-editor .cm-search .cm-textfield::placeholder {
+  color: var(--color-zinc-500);
+}
+:root .cm-editor .cm-search .cm-textfield:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+:root .cm-editor .cm-search .cm-button {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-zinc-700);
+  border-radius: 6px;
+  background: var(--color-zinc-900);
+  background-image: none;
+  color: var(--color-zinc-200);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+:root .cm-editor .cm-search .cm-button:hover {
+  background: var(--color-zinc-800);
+  border-color: var(--color-zinc-600);
+}
+:root .cm-editor .cm-search .cm-button:active {
+  background-image: none;
+  background: var(--color-zinc-700);
+}
+:root .cm-editor .cm-search .cm-button[name="next"],
+:root .cm-editor .cm-search .cm-button[name="prev"] {
+  padding: 0;
+  font-size: 14px;
+}
+:root .cm-editor .cm-search .cm-button[name="prev"] {
+  margin-right: 8px;
+}
+/* Option checkboxes render as toggle chips (Aa / .* / Word). */
+:root .cm-editor .cm-search label {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--color-zinc-400);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+:root .cm-editor .cm-search label:hover {
+  background: var(--color-zinc-900);
+  color: var(--color-zinc-200);
+}
+:root .cm-editor .cm-search label:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--color-zinc-100);
+}
+:root .cm-editor .cm-search label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+:root .cm-editor .cm-search label input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+:root .cm-editor .cm-search button[name="close"] {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-zinc-500);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+:root .cm-editor .cm-search button[name="close"]:hover {
+  background: var(--color-zinc-800);
+  color: var(--color-zinc-100);
+}
+:root .cm-editor .cm-searchMatch {
+  background: rgba(250, 204, 21, 0.28);
+  outline: 1px solid rgba(250, 204, 21, 0.55);
+  border-radius: 2px;
+}
+:root .cm-editor .cm-searchMatch.cm-searchMatch-selected {
+  background: rgba(249, 115, 22, 0.45);
+  outline-color: rgba(249, 115, 22, 0.9);
 }

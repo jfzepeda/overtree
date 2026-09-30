@@ -74,6 +74,17 @@ export async function writeFile(
   await touchProject(id);
 }
 
+/** Like writeFile, but refuses to clobber an existing file or folder. */
+export async function createFile(
+  id: string,
+  relPath: string,
+  content: string,
+): Promise<void> {
+  const abs = await resolveInProject(id, relPath);
+  if (await exists(abs)) throw new Error(`"${relPath}" already exists`);
+  await writeFile(id, relPath, content);
+}
+
 export async function editFile(
   id: string,
   relPath: string,
@@ -110,6 +121,11 @@ export async function renameFile(
 ): Promise<void> {
   const fromAbs = await resolveInProject(id, fromRel);
   const toAbs = await resolveInProject(id, toRel);
+  if (toAbs === fromAbs) return;
+  if (toAbs.startsWith(fromAbs + path.sep)) {
+    throw new Error(`cannot move "${fromRel}" into itself`);
+  }
+  if (await exists(toAbs)) throw new Error(`"${toRel}" already exists`);
   await fs.mkdir(path.dirname(toAbs), { recursive: true });
   await fs.rename(fromAbs, toAbs);
   await touchProject(id);
@@ -117,6 +133,7 @@ export async function renameFile(
 
 export async function mkdir(id: string, relPath: string): Promise<void> {
   const abs = await resolveInProject(id, relPath);
+  if (await exists(abs)) throw new Error(`"${relPath}" already exists`);
   await fs.mkdir(abs, { recursive: true });
   await touchProject(id);
 }

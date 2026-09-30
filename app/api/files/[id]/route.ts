@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { listFiles, mkdir, renameFile, writeFile } from "@/lib/core/files";
+import { createFile, listFiles, mkdir, renameFile } from "@/lib/core/files";
+import { releaseDocs } from "@/lib/yjs/doc-manager";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -27,10 +28,11 @@ export async function POST(req: Request, { params }: Ctx) {
   };
   try {
     if (body.op === "create" && body.path) {
-      await writeFile(id, body.path, body.content ?? "");
+      await createFile(id, body.path, body.content ?? "");
     } else if (body.op === "mkdir" && body.path) {
       await mkdir(id, body.path);
     } else if (body.op === "rename" && body.from && body.to) {
+      await releaseDocs(id, body.from);
       await renameFile(id, body.from, body.to);
     } else {
       return NextResponse.json({ error: "bad op" }, { status: 400 });
