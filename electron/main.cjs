@@ -16,10 +16,21 @@ const serverEntry = path.join(appRoot, "dist", "server.cjs");
 // macOS apps launched from Finder/Dock inherit a stripped PATH
 // (/usr/bin:/bin:/usr/sbin:/sbin) that omits Homebrew, cargo, etc. The
 // LaTeX compiler shells out to `tectonic`, which lives in one of those
-// dirs, so we restore them before spawning the server.
+// dirs, so we restore them before spawning the server. On Windows we add
+// the usual install locations of tectonic (cargo, scoop, chocolatey).
 function enhancedPath() {
-  const home = process.env.HOME || "";
-  const candidates = [
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const isWin = process.platform === "win32";
+  const candidates = isWin
+    ? [
+        home && path.join(home, ".cargo", "bin"),
+        home && path.join(home, "scoop", "shims"),
+        process.env.LOCALAPPDATA &&
+          path.join(process.env.LOCALAPPDATA, "Programs", "tectonic"),
+        process.env.ChocolateyInstall &&
+          path.join(process.env.ChocolateyInstall, "bin"),
+      ].filter(Boolean)
+    : [
     "/opt/homebrew/bin",
     "/usr/local/bin",
     home && path.join(home, ".cargo/bin"),
@@ -146,6 +157,14 @@ function createWindow(port) {
     // keep the traffic lights vertically centred inside it.
     titleBarStyle: "hidden",
     trafficLightPosition: { x: 14, y: 10 },
+    // Windows/Linux: keep the native min/max/close buttons over our title strip.
+    ...(process.platform !== "darwin" && {
+      titleBarOverlay: {
+        color: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff",
+        symbolColor: nativeTheme.shouldUseDarkColors ? "#d4d4d8" : "#3f3f46",
+        height: 32,
+      },
+    }),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

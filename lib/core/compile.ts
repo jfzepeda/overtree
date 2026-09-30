@@ -4,6 +4,7 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { projectDir } from "./storage";
 import { readMeta, touchProject } from "./projects";
+import { loadSettings } from "./settings";
 
 export type CompileEvent =
   | { type: "log"; line: string; stream: "stdout" | "stderr" }
@@ -66,7 +67,8 @@ export async function compile(id: string): Promise<CompileSession> {
   const main = meta.mainFile;
   const args = ["-X", "compile", main, "--outdir", "output", "--keep-logs"];
 
-  const child = spawn("tectonic", args, {
+  const { tectonicPath } = await loadSettings();
+  const child = spawn(tectonicPath || process.env.OVERTREE_TECTONIC || "tectonic", args, {
     cwd,
     env: { ...process.env, TECTONIC_NO_COLOR: "1" },
   });
