@@ -12,7 +12,7 @@
     "mcp-config": "tsx scripts/print-mcp-config.ts",
     "electron:dev": "concurrently -k -n NEXT,ELECTRON \"bun run dev\" \"wait-on tcp:3737 && OVERTREE_DEV_URL=http://localhost:3737 electron electron/main.cjs\"",
     "electron:build:server": "node scripts/build-server.mjs",
-    "app:dist": "next build && bun run electron:build:server && electron-builder --mac"
+    "app:dist": "next build --webpack && bun run electron:build:server && electron-builder --mac"
   },
   "bin": {
     "overtree-mcp": "mcp-server/stdio.ts"
