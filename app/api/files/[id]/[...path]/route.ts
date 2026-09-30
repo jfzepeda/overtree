@@ -6,6 +6,7 @@ import {
   readFileBinary,
   writeFile,
 } from "@/lib/core/files";
+import { releaseDocs } from "@/lib/yjs/doc-manager";
 
 type Ctx = { params: Promise<{ id: string; path: string[] }> };
 
@@ -84,6 +85,7 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   const { id, path: parts } = await params;
   const rel = parts.join("/");
   try {
+    await releaseDocs(id, rel);
     await deleteFile(id, rel);
     return NextResponse.json({ ok: true });
   } catch (e) {

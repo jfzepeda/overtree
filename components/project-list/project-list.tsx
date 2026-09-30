@@ -9,6 +9,7 @@ import {
   SettingsIcon,
   TrashIcon,
 } from "@/components/icons";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { NewProjectDialog } from "./new-project-dialog";
 
 type Project = {
@@ -53,6 +54,7 @@ export function ProjectList() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <ThemeToggle className="inline-flex items-center px-3 py-2.5 rounded-lg border border-zinc-800 hover:border-zinc-700 text-zinc-300 transition" />
           <Link
             href="/settings"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-800 hover:border-zinc-700 text-sm text-zinc-300 transition"

@@ -16,6 +16,7 @@ import {
   type LogEntry,
 } from "@/components/compile-log/compile-log";
 import { PresenceBar } from "@/components/presence/presence-bar";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 const YjsCodeMirror = dynamic(
   () => import("./yjs-code-mirror").then((m) => m.YjsCodeMirror),
@@ -53,6 +54,7 @@ export function EditorShell({
   const [connected, setConnected] = useState(false);
   const [user, setUser] = useState<UserInfo>(initialUser);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [editingName, setEditingName] = useState(false);
 
   const editorRef = useRef<CodeMirrorHandle | null>(null);
   const compileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -140,22 +142,39 @@ export function EditorShell({
     };
   }, []);
 
-  async function createFile(parent: string) {
-    const name = prompt(
-      `New file name${parent ? ` inside "${parent}"` : ""}:`,
-      "untitled.tex",
-    );
-    if (!name) return;
-    const path = parent ? `${parent}/${name}` : name;
+  // window.prompt() throws in Electron, so names come from the tree's inline input.
+  async function fileOp(body: Record<string, string>): Promise<string | null> {
     const r = await fetch(`/api/files/${project.id}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ op: "create", path, content: "" }),
+      body: JSON.stringify(body),
     });
-    if (r.ok) {
-      await reloadTree();
-      setActivePath(path);
+    if (r.ok) return null;
+    const j = await r.json().catch(() => ({}));
+    return j.error ?? `request failed (${r.status})`;
+  }
+
+  async function createEntry(parent: string, name: string, kind: "file" | "dir") {
+    const path = parent ? `${parent}/${name}` : name;
+    const err = await fileOp(
+      kind === "dir" ? { op: "mkdir", path } : { op: "create", path, content: "" },
+    );
+    if (err) return err;
+    await reloadTree();
+    if (kind === "file") setActivePath(path);
+    return null;
+  }
+
+  async function movePath(from: string, to: string) {
+    const err = await fileOp({ op: "rename", from, to });
+    if (err) return err;
+    // Keep the open editor on the file it was showing, now at its new path.
+    if (activePath === from) setActivePath(to);
+    else if (activePath.startsWith(`${from}/`)) {
+      setActivePath(to + activePath.slice(from.length));
     }
+    await reloadTree();
+    return null;
   }
 
   async function deletePath(path: string) {
@@ -163,7 +182,9 @@ export function EditorShell({
     await fetch(`/api/files/${project.id}/${encodeURI(path)}`, {
       method: "DELETE",
     });
-    if (activePath === path) setActivePath(project.mainFile);
+    if (activePath === path || activePath.startsWith(`${path}/`)) {
+      setActivePath(project.mainFile);
+    }
     reloadTree();
   }
 
@@ -171,10 +192,10 @@ export function EditorShell({
     editorRef.current?.gotoLine(line);
   }
 
-  async function changeName() {
-    const next = window.prompt("Your name:", user.name);
-    if (!next || !next.trim()) return;
+  async function changeName(next: string) {
+    setEditingName(false);
     const trimmed = next.trim();
+    if (!trimmed || trimmed === user.name) return;
     await fetch("/api/me", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -188,7 +209,7 @@ export function EditorShell({
     : null;
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-[calc(100vh-var(--titlebar-h))] flex flex-col">
       <header className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-[var(--panel)]">
         <div className="flex items-center gap-3 min-w-0">
           <Link
@@ -202,13 +223,31 @@ export function EditorShell({
           <span className="text-xs text-zinc-500 truncate">{activePath}</span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={changeName}
-            className="text-xs text-zinc-500 hover:text-zinc-200"
-            title="Change name"
-          >
-            {user.name}
-          </button>
+          <ThemeToggle />
+          {editingName ? (
+            <input
+              autoFocus
+              defaultValue={user.name}
+              onFocus={(e) => e.currentTarget.select()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+                else if (e.key === "Escape") {
+                  e.currentTarget.value = user.name; // blur on unmount must not save
+                  setEditingName(false);
+                }
+              }}
+              onBlur={(e) => changeName(e.currentTarget.value)}
+              className="w-28 text-xs bg-zinc-950 border border-[var(--accent)] rounded px-1 py-0.5 outline-none"
+            />
+          ) : (
+            <button
+              onClick={() => setEditingName(true)}
+              className="text-xs text-zinc-500 hover:text-zinc-200"
+              title="Change name"
+            >
+              {user.name}
+            </button>
+          )}
           <PresenceBar me={user} peers={peers} connected={connected} />
           <button
             onClick={saveNow}
@@ -254,7 +293,8 @@ export function EditorShell({
               tree={tree}
               activePath={activePath}
               onOpen={setActivePath}
-              onCreate={createFile}
+              onCreate={createEntry}
+              onMove={movePath}
               onDelete={deletePath}
             />
           </Panel>

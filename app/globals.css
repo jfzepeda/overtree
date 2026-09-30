@@ -6,6 +6,64 @@
   --panel: #141414;
   --border: #262626;
   --accent: #4f8cf7;
+  --scrollbar: #3a3a3a;
+  --scrollbar-hover: #4a4a4a;
+  --titlebar-h: 0px;
+  color-scheme: dark;
+}
+
+/* Light theme: the UI is written against Tailwind's zinc scale for a dark
+   background, so mirroring the scale (50<->950, 100<->900, ...) flips every
+   surface, border and text colour at once without touching components. */
+:root[data-theme="light"] {
+  --background: #ffffff;
+  --foreground: #18181b;
+  --panel: #f7f7f8;
+  --border: #e4e4e7;
+  --scrollbar: #d4d4d8;
+  --scrollbar-hover: #a1a1aa;
+  --color-zinc-50: oklch(14.1% 0.005 285.823);
+  --color-zinc-100: oklch(21% 0.006 285.885);
+  --color-zinc-200: oklch(27.4% 0.006 286.033);
+  --color-zinc-300: oklch(37% 0.013 285.805);
+  --color-zinc-400: oklch(44.2% 0.017 285.786);
+  --color-zinc-500: oklch(55.2% 0.016 285.938);
+  --color-zinc-600: oklch(70.5% 0.015 286.067);
+  --color-zinc-700: oklch(87.1% 0.006 286.286);
+  --color-zinc-800: oklch(92% 0.004 286.32);
+  --color-zinc-900: oklch(96.7% 0.001 286.375);
+  --color-zinc-950: oklch(98.5% 0 0);
+  color-scheme: light;
+}
+
+/* Electron window: the native title bar is hidden, so reserve a draggable
+   strip at the top (the traffic lights sit inside it). */
+:root.electron {
+  --titlebar-h: 32px;
+}
+.titlebar {
+  display: none;
+}
+:root.electron .titlebar {
+  display: flex;
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--titlebar-h);
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--color-zinc-500);
+  background: var(--panel);
+  border-bottom: 1px solid var(--color-zinc-800);
+  -webkit-app-region: drag;
+  user-select: none;
+  z-index: 50;
+}
+:root.electron .titlebar button {
+  -webkit-app-region: no-drag;
+}
+:root.electron body {
+  padding-top: var(--titlebar-h);
 }
 
 @theme inline {
@@ -48,9 +106,9 @@ button {
   height: 8px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #3a3a3a;
+  background: var(--scrollbar);
   border-radius: 4px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #4a4a4a;
+  background: var(--scrollbar-hover);
 }

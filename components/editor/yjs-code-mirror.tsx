@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { yCollab } from "y-codemirror.next";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { StreamLanguage } from "@codemirror/language";
@@ -12,6 +12,7 @@ import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { basicSetup } from "codemirror";
 import { encodeRoom } from "@/lib/identity";
+import { useTheme } from "@/components/theme/theme-toggle";
 
 export type CodeMirrorHandle = {
   gotoLine: (line: number) => void;
@@ -44,6 +45,8 @@ export function YjsCodeMirror({
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const themeCompartment = useRef(new Compartment());
+  const theme = useTheme();
   const onSaveRef = useRef(onSave);
   const onCompileRef = useRef(onCompile);
   const onPeersRef = useRef(onPeers);
@@ -101,7 +104,9 @@ export function YjsCodeMirror({
         state: EditorState.create({
           extensions: [
             basicSetup,
-            oneDark,
+            themeCompartment.current.of(
+              document.documentElement.dataset.theme === "light" ? [] : oneDark,
+            ),
             ...(isTex ? [StreamLanguage.define(stex)] : []),
             yCollab(ytext, provider.awareness, { undoManager: undoMgr }),
             keymap.of([
@@ -154,6 +159,14 @@ export function YjsCodeMirror({
         viewRef.current = null;
       };
   }, [projectId, path, userName, userColor]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: themeCompartment.current.reconfigure(
+        theme === "light" ? [] : oneDark,
+      ),
+    });
+  }, [theme]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

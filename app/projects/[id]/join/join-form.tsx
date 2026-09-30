@@ -60,7 +60,7 @@ export function JoinForm({ projectId, projectName, isPrivate }: Props) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6">
+    <div className="min-h-[calc(100vh-var(--titlebar-h))] flex items-center justify-center px-6">
       <form
         onSubmit={submit}
         className="w-full max-w-md bg-[var(--panel)] border border-zinc-800 rounded-xl p-6"

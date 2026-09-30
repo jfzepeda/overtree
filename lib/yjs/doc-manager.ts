@@ -30,6 +30,12 @@ async function yjsStateFile(
   return path.join(meta, "yjs", `${safe}.bin`);
 }
 
+function decodeStateFileName(name: string): string {
+  let b64 = name.replace(/\.bin$/, "").replace(/-/g, "+").replace(/_/g, "/");
+  while (b64.length % 4) b64 += "=";
+  return Buffer.from(b64, "base64").toString("utf8");
+}
+
 export type Room = {
   key: string;
   projectId: string;
@@ -44,9 +50,17 @@ export type Room = {
   stateFlushTimer: ReturnType<typeof setTimeout> | null;
   watcher: FSWatcher | null;
   disposeTimer: ReturnType<typeof setTimeout> | null;
+  /** Set once the file was renamed/deleted; the room must never write again. */
+  disposed: boolean;
 };
 
-const rooms = new Map<string, Room>();
+// Next.js route handlers and the custom server (server.ts -> ws-server) each
+// get their own bundled copy of this module, so the registry lives on
+// globalThis — otherwise routes like /api/save see an empty map.
+const g = globalThis as typeof globalThis & {
+  __overtreeRooms?: Map<string, Room>;
+};
+const rooms = (g.__overtreeRooms ??= new Map<string, Room>());
 
 function roomKey(projectId: string, filePath: string): string {
   return `${projectId}::${filePath}`;
@@ -113,6 +127,7 @@ export async function getRoom(
     stateFlushTimer: null,
     watcher: null,
     disposeTimer: null,
+    disposed: false,
   };
 
   doc.on("update", (_update, origin) => {
@@ -137,11 +152,13 @@ export async function getRoom(
 }
 
 function scheduleFlush(room: Room) {
+  if (room.disposed) return;
   if (room.flushTimer) clearTimeout(room.flushTimer);
   room.flushTimer = setTimeout(() => flushToDisk(room), FLUSH_DEBOUNCE_MS);
 }
 
 function scheduleStateFlush(room: Room) {
+  if (room.disposed) return;
   if (room.stateFlushTimer) clearTimeout(room.stateFlushTimer);
   room.stateFlushTimer = setTimeout(
     () => flushYjsState(room),
@@ -212,6 +229,10 @@ export function detachConnection(room: Room, ws: WebSocket) {
 
 async function disposeRoom(room: Room) {
   if (room.connections.size > 0) return;
+  if (room.disposed) {
+    room.doc.destroy();
+    return;
+  }
   if (room.flushTimer) {
     clearTimeout(room.flushTimer);
     await flushToDisk(room);
@@ -225,6 +246,41 @@ async function disposeRoom(room: Room) {
   }
   room.doc.destroy();
   rooms.delete(room.key);
+}
+
+/**
+ * Retire the live documents for `relPath` (a file, or every file under a
+ * folder) before it is renamed or deleted. Pending edits are flushed to the
+ * old location first; afterwards the room is marked disposed so late updates
+ * from still-open sockets can't write the old path back into existence. The
+ * persisted CRDT state is dropped too, so a future file at the same path
+ * starts from its disk content instead of resurrecting the old text.
+ */
+export async function releaseDocs(
+  projectId: string,
+  relPath: string,
+): Promise<void> {
+  const under = (p: string) => p === relPath || p.startsWith(`${relPath}/`);
+  for (const room of [...rooms.values()]) {
+    if (room.projectId !== projectId || !under(room.filePath)) continue;
+    if (room.flushTimer) {
+      clearTimeout(room.flushTimer);
+      await flushToDisk(room);
+    }
+    if (room.stateFlushTimer) clearTimeout(room.stateFlushTimer);
+    if (room.disposeTimer) clearTimeout(room.disposeTimer);
+    room.flushTimer = room.stateFlushTimer = room.disposeTimer = null;
+    room.disposed = true;
+    rooms.delete(room.key);
+    await room.watcher?.close().catch(() => {});
+  }
+  const stateDir = path.join(await projectMetaDir(projectId), "yjs");
+  const names = await fs.readdir(stateDir).catch(() => [] as string[]);
+  await Promise.all(
+    names
+      .filter((n) => n.endsWith(".bin") && under(decodeStateFileName(n)))
+      .map((n) => fs.rm(path.join(stateDir, n), { force: true })),
+  );
 }
 
 /** Flush all in-memory Y.Docs belonging to a project to disk, awaiting writes. */
